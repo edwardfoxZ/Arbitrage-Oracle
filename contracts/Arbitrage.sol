@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Tells the Solidity compiler to compile only from v0.8.13 to v0.9.0
-pragma solidity ^0.8.13;
+pragma solidity >0.5.8;
 
 import "./Dex.sol";
 import "./Oracle.sol";
 
-contract Arbitrage {
+contract ArbitrageTrader {
     struct Asset {
         string name;
         address dex;
@@ -33,21 +32,34 @@ contract Arbitrage {
         uint _date
     ) external onlyAdmin {
         Asset storage asset = assets[_sticker];
-        require(asset.dex != address(0), "the asset does not exist");
+        require(asset.dex != address(0), "This asset does not exist");
 
+        // Get latest price of asset from oracle
         bytes32 dataKey = keccak256(abi.encodePacked(_sticker, _date));
         Oracle oracleContract = Oracle(oracle);
         Oracle.Result memory result = oracleContract.getData(dataKey);
-
-        require(result.exist == true, "this result does not exist");
         require(
-            result.approvedBy == 10,
-            "the number of validators are not enough"
+            result.exist == true,
+            "This result does not exist, cannot trade"
         );
+        require(
+            result.approvedBy.length == 10,
+            "Not enough approvals for this result, cannot trade"
+        );
+
+        //If there is a price, trade of the dex
+        Dex dexContract = Dex(asset.dex);
+        uint price = dexContract.getPrice(_sticker);
+        uint amount = 1 ether / price;
+        if (price > result.payload) {
+            dexContract.sell(_sticker, amount, (99 * price) / 100);
+        } else if (price < result.payload) {
+            dexContract.buy(_sticker, amount, (101 * price) / 100);
+        }
     }
 
     modifier onlyAdmin() {
-        require(admin == msg.sender, "only admin");
+        require(msg.sender == admin, "Only admin");
         _;
     }
 }
